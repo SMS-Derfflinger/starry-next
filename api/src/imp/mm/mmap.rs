@@ -3,7 +3,7 @@ use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::MappingFlags;
 use axtask::{TaskExtRef, current};
 use linux_raw_sys::general::{
-    MAP_ANONYMOUS, MAP_FIXED, MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MAP_STACK, PROT_EXEC,
+    MAP_ANONYMOUS, MAP_HUGETLB, MAP_FIXED, MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MAP_STACK, PROT_EXEC,
     PROT_GROWSDOWN, PROT_GROWSUP, PROT_READ, PROT_WRITE,
 };
 use memory_addr::{VirtAddr, VirtAddrRange};
@@ -63,6 +63,8 @@ bitflags::bitflags! {
         const NORESERVE = MAP_NORESERVE;
         /// Allocation is for a stack.
         const STACK = MAP_STACK;
+        /// Enable huge page.
+        const HUGETLB = MAP_HUGETLB;
     }
 }
 
@@ -87,8 +89,15 @@ pub fn sys_mmap(
         addr, length, permission_flags, map_flags, fd, offset
     );
 
-    let start = memory_addr::align_down_4k(addr);
-    let end = memory_addr::align_up_4k(addr + length);
+    let page_size = if map_flags.contains(MmapFlags::HUGETLB) {
+        // temporarily support 2M huge page only.
+        HUGE_PAGE_SIZE_2M
+    } else {
+        PAGE_SIZE_4K
+    };
+
+    let start = memory_addr::align_down(addr, page_size);
+    let end = memory_addr::align_up(addr + length, page_size);
     let aligned_length = end - start;
     debug!(
         "start: {:x?}, end: {:x?}, aligned_length: {:x?}",
